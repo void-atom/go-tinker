@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -212,7 +213,7 @@ func train(filename string, maps *Mapping) {
 		return
 	}
 	tokens := maps.textToToken(text)
-	vocabSize := 2556
+	vocabSize := 2356
 
 	for len(maps.vocab) < vocabSize {
 		tokens = maps.updateMap(tokens)
@@ -296,12 +297,20 @@ func InOrderTraversal(root *TreeNode, traversalBucket *[]string) {
 func encode(vocab map[string]int, input string) []int {
 
 	sortedVocabs, _ := sortMapByKeyLengthDescending(vocab)
-	root := &TreeNode{}
 	var tokenized []string
 
-	processNode(input, root, sortedVocabs)
+	// Using regex to break words preserving the leading spaces
+	re := regexp.MustCompile(`(\s*\S+|\s+)`)
+	words := re.FindAllString(input, -1)
 	fmt.Print("Tokenized words: ")
-	InOrderTraversal(root, &tokenized)
+
+	for _, word := range words {
+		root := &TreeNode{}
+		processNode(word, root, sortedVocabs)
+		InOrderTraversal(root, &tokenized)
+
+	}
+
 	println()
 
 	var tokens []int
@@ -347,7 +356,7 @@ func main() {
 
 	getMappings(&vocabDecoded, &invVocabDecoded)
 
-	inputText := getInput()
+	inputText := "We go to the moon not because it's easy but because it's hard." //getInput()
 
 	// fmt.Println("Input text :", inputText)
 	tokenList := encode(vocabDecoded, inputText)
