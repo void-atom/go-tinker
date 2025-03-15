@@ -93,18 +93,26 @@ func (m *Mapping) updateMap(tokens []int) []int {
 
 }
 
-// Merge the two token_id pairs with max frequency into a new tokenList
+// Merge the two token_id pairs with max frequency into the same list
 func mergeToken(tokenList []int, oldBytePair [2]int, newTokenID int) []int {
-	token := []int{}
+	// fmt.Printf("%v,%d,%d-->%d\n", tokenList, oldBytePair[0], oldBytePair[1], newTokenID)
+
+	writeIndex := 0
+
 	for i := 0; i < len(tokenList); i++ {
-		if i != len(tokenList)-1 && oldBytePair == [2]int{tokenList[i], tokenList[i+1]} {
-			token = append(token, newTokenID)
-			i++
+		// If a matching pair is found, replace it with newTokenID
+		if i < len(tokenList)-1 && oldBytePair == [2]int{tokenList[i], tokenList[i+1]} {
+			tokenList[writeIndex] = newTokenID
+			writeIndex++
+			i++ // Skip the next element as it's merged
 		} else {
-			token = append(token, tokenList[i])
+			tokenList[writeIndex] = tokenList[i]
+			writeIndex++
 		}
 	}
-	return token
+	// fmt.Println(tokenList[:writeIndex])
+
+	return tokenList[:writeIndex] // Trim unused part of the slice
 }
 
 func (m *Mapping) textToToken(inputText string) []int {
@@ -132,6 +140,38 @@ func (m *Mapping) tokenToText(tokens []int, print bool) string {
 
 	}
 	return result
+}
+
+// Train the BPE model from a given dataset
+func train(filename string, maps *Mapping) {
+
+	// Checking if the file exists already
+	_, err := os.Stat("mappings.dump")
+	if os.IsNotExist(err) {
+		fmt.Println("Mapping file does not exist. Training on \"input.txt\" to generate \"mappings.dump\"")
+	} else if err != nil {
+		fmt.Println("Error checking file:", err)
+	} else {
+		fmt.Println("Mapping file exists.")
+		return
+	}
+
+	maps.initializeMap()
+	text, err := readFile(filename)
+
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	tokens := maps.textToToken(text)
+	vocabSize := 2356
+
+	for len(maps.vocab) < vocabSize {
+		tokens = maps.updateMap(tokens)
+	}
+
+	fmt.Printf("\nFinal vocabulary size: %d\n", len(maps.vocab))
+	maps.saveMappings()
 }
 
 func (m *Mapping) saveMappings() bool {
@@ -189,39 +229,6 @@ func getMappings(vocab *map[string]int, inverseVocab *map[int]string) {
 	// Print the results
 	// fmt.Print("Decoded Vocab:", vocab)
 	// fmt.Print("Decoded InverseVocab:", inverseVocab)
-}
-
-// Train the BPE model from a given dataset
-func train(filename string, maps *Mapping) {
-
-	// Checking if the file exists already
-	_, err := os.Stat("mappings.dump")
-	if os.IsNotExist(err) {
-		fmt.Println("Mapping file does not exist. Training on \"input.txt\" to generate \"mappings.dump\"")
-	} else if err != nil {
-		fmt.Println("Error checking file:", err)
-	} else {
-		fmt.Println("Mapping file exists.")
-		return
-	}
-
-	maps.initializeMap()
-	text, err := readFile(filename)
-
-	if err != nil {
-		fmt.Println("Error:", err)
-		return
-	}
-	tokens := maps.textToToken(text)
-	vocabSize := 2356
-
-	for len(maps.vocab) < vocabSize {
-		tokens = maps.updateMap(tokens)
-	}
-	// fmt.Print(maps.vocab)
-
-	fmt.Printf("\nFinal vocabulary size: %d\n", len(maps.vocab))
-	maps.saveMappings()
 }
 
 func sortMapByKeyLengthDescending(m map[string]int) ([]string, []int) {
@@ -356,7 +363,7 @@ func main() {
 
 	getMappings(&vocabDecoded, &invVocabDecoded)
 
-	inputText := "We go to the moon not because it's easy but because it's hard." //getInput()
+	inputText := "we go to the moon not because it's easy but because it's hard." //getInput()
 
 	// fmt.Println("Input text :", inputText)
 	tokenList := encode(vocabDecoded, inputText)
