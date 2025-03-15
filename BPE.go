@@ -2,9 +2,12 @@ package main
 
 import (
 	"bufio"
+	"encoding/gob"
 	"fmt"
 	"io"
 	"os"
+	"sort"
+	"strings"
 )
 
 // Steps:
@@ -119,6 +122,58 @@ func (m *Mapping) tokenToText(tokens []int, print bool) string {
 	return result
 }
 
+func (m *Mapping) saveMappings() bool {
+	// Create a file in go
+	file, err := os.Create("mappings.dump")
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
+
+	// sortedTokens, sortedId := sortMapByKeyLengthDescending(m.vocab)
+	// Create a new encoder and encode the data
+	encoder := gob.NewEncoder(file)
+	err = encoder.Encode(m.vocab)
+	if err != nil {
+		panic(err)
+	}
+	err = encoder.Encode(m.inverseVocab)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("Data saved in binary format.")
+	return true
+
+}
+
+func getMappings(vocab *map[string]int, inverseVocab *map[int]string) {
+	file, err := os.Open("mappings.dump")
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
+
+	// Create a decoder
+	decoder := gob.NewDecoder(file)
+
+	// Decode the first map
+	err = decoder.Decode(vocab)
+	if err != nil {
+		panic(err)
+	}
+
+	// Decode the second map
+	err = decoder.Decode(inverseVocab)
+	if err != nil {
+		panic(err)
+	}
+
+	// Print the results
+	// fmt.Print("Decoded Vocab:", vocab)
+	// fmt.Print("Decoded InverseVocab:", inverseVocab)
+}
+
 // Train the BPE model from a given dataset
 func train(filename string, maps *Mapping) {
 	maps.initializeMap()
@@ -128,22 +183,120 @@ func train(filename string, maps *Mapping) {
 		fmt.Println("Error:", err)
 		return
 	}
-	text = text[:5000]
 	// print(text)
-	tokens := maps.textToToken(text)
-	vocabSize := 1256
+	tokens := maps.textToToken(text[:20000])
+	vocabSize := 556
 
 	for len(maps.vocab) < vocabSize {
 		tokens = maps.updateMap(tokens)
 	}
+	// fmt.Print(maps.vocab)
+
 	fmt.Printf("\nFinal vocabulary size: %d\n", len(maps.vocab))
+	maps.saveMappings()
+}
+
+func sortMapByKeyLengthDescending(m map[string]int) ([]string, []int) {
+	type kv struct {
+		Key   string
+		Value int
+	}
+	var sortedSlice []kv
+
+	for k, v := range m {
+		sortedSlice = append(sortedSlice, kv{Key: k, Value: v})
+	}
+
+	// Sort by key length in descending order
+	sort.Slice(sortedSlice, func(i, j int) bool {
+		return len(sortedSlice[i].Key) > len(sortedSlice[j].Key)
+	})
+
+	var keys []string
+	var values []int
+	for _, item := range sortedSlice {
+		keys = append(keys, item.Key)
+		values = append(values, item.Value)
+	}
+
+	return keys, values
+}
+
+type TreeNode struct {
+	text  string
+	Left  *TreeNode
+	Right *TreeNode
+}
+
+func processNode(input string, node *TreeNode, vocabs []string) {
+	if len(input) <= 0 {
+		return
+	}
+	index := -1
+	var matched string
+	for _, word := range vocabs {
+		if strings.Index(input, word) >= 0 {
+			index = strings.Index(input, word)
+			matched = word
+			break
+		}
+	}
+
+	node.text = input[index : index+len(matched)]
+
+	if len(input[:index]) > 0 {
+		node.Left = &TreeNode{}
+		processNode(input[:index], node.Left, vocabs)
+	}
+
+	if len(input[index+len(matched):]) > 0 {
+		node.Right = &TreeNode{}
+		processNode(input[index+len(matched):], node.Right, vocabs)
+	}
 
 }
 
-func main() {
-	var input string
-	fmt.Printf("Enter the text to encode: ")
+func InOrderTraversal(root *TreeNode, traversalBucket *[]string) {
+	if root != nil {
+		InOrderTraversal(root.Left, traversalBucket)
+		fmt.Print(root.text, "|")
+		*traversalBucket = append(*traversalBucket, root.text)
 
+		InOrderTraversal(root.Right, traversalBucket)
+	}
+}
+
+func encode(vocab map[string]int, input string) []int {
+
+	sortedVocabs, _ := sortMapByKeyLengthDescending(vocab)
+	root := &TreeNode{}
+	var tokenized []string
+
+	processNode(input, root, sortedVocabs)
+	fmt.Print("Tokenized words: ")
+	InOrderTraversal(root, &tokenized)
+	println()
+
+	var tokens []int
+	for _, tokenWord := range tokenized {
+		tokens = append(tokens, vocab[tokenWord])
+	}
+	return tokens
+
+}
+
+func decode(tokens []int, inverseVocab map[int]string) string {
+	decodedText := ""
+
+	for _, token := range tokens {
+		decodedText += inverseVocab[token]
+	}
+	return decodedText
+}
+
+func getInput() string {
+	fmt.Printf("Enter the text to encode: ")
+	var input string
 	// Basic code to read from stdin
 	scanner := bufio.NewScanner(os.Stdin)
 	if scanner.Scan() {
@@ -152,15 +305,27 @@ func main() {
 	if err := scanner.Err(); err != nil {
 		fmt.Println("Error reading input:", err)
 	}
+	return input
+}
 
-	fileName := "input.txt"
+func main() {
+	inputText := "thirst and hunger are bad"
 
-	trainedMap := Mapping{}
-	train(fileName, &trainedMap)
+	// fileName := "input.txt"
 
-	tokens := trainedMap.textToToken(input)
-	fmt.Println(tokens)
-	fmt.Print(trainedMap.tokenToText(tokens, true))
+	// trainedMap := Mapping{}
+	// train(fileName, &trainedMap)
+
+	var invVocabDecoded map[int]string
+	var vocabDecoded map[string]int
+
+	getMappings(&vocabDecoded, &invVocabDecoded)
+
+	fmt.Println("Input text :", inputText)
+	tokenList := encode(vocabDecoded, inputText)
+	fmt.Println("Token list: ", tokenList)
+	fmt.Println("Decoded text:", decode(tokenList, invVocabDecoded))
+
 	// To do: Implement reverse searching in the mappings
 
 }
