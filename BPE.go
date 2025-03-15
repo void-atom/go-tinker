@@ -11,11 +11,19 @@ import (
 )
 
 // Steps:
+// Train
 // 1. Create a mapping from the chars to token_ids (Probably will use 256 ASCII codes)
 // 2. Convert the text to the token_ids format
 // 3. Count consecutive pairs and return the topmost pair
 // 4. Replace the position of token pairs with the new token_id
 // 5. Update the mapping of this new token_ids
+
+// Inference:
+// 1. Sort the vocabs hashMap and convert it into list/slices of strings
+// 2. Start matching the longest substring and convert it to tokenized_text(Uses Binary Tree to preserve order)
+// 3. InorderTraversal of binary tree to get back the tokenized_text in order
+// 4. Use the look-up table(vocabs) to convert to tokenized_text to tokens
+// 5. Use another look-up (inverseVocab) to convert it back to input Text
 
 // Mapping Class
 type Mapping struct {
@@ -61,6 +69,9 @@ func (m *Mapping) updateMap(tokens []int) []int {
 	//  To calculate bytePair frequencies
 	for i := 0; i < len(tokens)-1; i++ {
 		bytePair := [2]int{tokens[i], tokens[i+1]}
+		if tokens[i+1] == ' ' {
+			continue
+		}
 		freqTable[bytePair]++
 
 		// Update maxPair if new max freq is found
@@ -123,15 +134,17 @@ func (m *Mapping) tokenToText(tokens []int, print bool) string {
 }
 
 func (m *Mapping) saveMappings() bool {
-	// Create a file in go
+	fmt.Println("Creating \"mappings.dump\" in the present directory")
+
+	// Create a file mappings.dump
 	file, err := os.Create("mappings.dump")
 	if err != nil {
 		panic(err)
 	}
 	defer file.Close()
 
-	// sortedTokens, sortedId := sortMapByKeyLengthDescending(m.vocab)
-	// Create a new encoder and encode the data
+	// Save using gob Encoding
+	// Normal write to file was not used because vocab contains UTF-8 encodings
 	encoder := gob.NewEncoder(file)
 	err = encoder.Encode(m.vocab)
 	if err != nil {
@@ -148,6 +161,7 @@ func (m *Mapping) saveMappings() bool {
 }
 
 func getMappings(vocab *map[string]int, inverseVocab *map[int]string) {
+	fmt.Println("Retrieving mappings from \"mappings.dump\"")
 	file, err := os.Open("mappings.dump")
 	if err != nil {
 		panic(err)
@@ -169,6 +183,8 @@ func getMappings(vocab *map[string]int, inverseVocab *map[int]string) {
 		panic(err)
 	}
 
+	fmt.Println("Successfully retrived the Mappings and inverse Mappings.")
+
 	// Print the results
 	// fmt.Print("Decoded Vocab:", vocab)
 	// fmt.Print("Decoded InverseVocab:", inverseVocab)
@@ -176,6 +192,18 @@ func getMappings(vocab *map[string]int, inverseVocab *map[int]string) {
 
 // Train the BPE model from a given dataset
 func train(filename string, maps *Mapping) {
+
+	// Checking if the file exists already
+	_, err := os.Stat("mappings.dump")
+	if os.IsNotExist(err) {
+		fmt.Println("Mapping file does not exist. Training on \"input.txt\" to generate \"mappings.dump\"")
+	} else if err != nil {
+		fmt.Println("Error checking file:", err)
+	} else {
+		fmt.Println("Mapping file exists.")
+		return
+	}
+
 	maps.initializeMap()
 	text, err := readFile(filename)
 
@@ -183,9 +211,8 @@ func train(filename string, maps *Mapping) {
 		fmt.Println("Error:", err)
 		return
 	}
-	// print(text)
-	tokens := maps.textToToken(text[:20000])
-	vocabSize := 556
+	tokens := maps.textToToken(text)
+	vocabSize := 2556
 
 	for len(maps.vocab) < vocabSize {
 		tokens = maps.updateMap(tokens)
@@ -295,6 +322,7 @@ func decode(tokens []int, inverseVocab map[int]string) string {
 }
 
 func getInput() string {
+	println()
 	fmt.Printf("Enter the text to encode: ")
 	var input string
 	// Basic code to read from stdin
@@ -309,23 +337,20 @@ func getInput() string {
 }
 
 func main() {
-	inputText := "thirst and hunger are bad"
+	fileName := "input.txt"
 
-	// fileName := "input.txt"
-
-	// trainedMap := Mapping{}
-	// train(fileName, &trainedMap)
+	trainedMap := Mapping{}
+	train(fileName, &trainedMap)
 
 	var invVocabDecoded map[int]string
 	var vocabDecoded map[string]int
 
 	getMappings(&vocabDecoded, &invVocabDecoded)
 
-	fmt.Println("Input text :", inputText)
+	inputText := getInput()
+
+	// fmt.Println("Input text :", inputText)
 	tokenList := encode(vocabDecoded, inputText)
 	fmt.Println("Token list: ", tokenList)
 	fmt.Println("Decoded text:", decode(tokenList, invVocabDecoded))
-
-	// To do: Implement reverse searching in the mappings
-
 }
